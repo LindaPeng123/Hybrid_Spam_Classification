@@ -1,1 +1,2 @@
 # Hybrid_Spam_Classification
+The CSV file named spam_assassin.csv contains the raw emails and its labels (spam or not). This CSV file is inputted into the feature_extraction.py. This python file extracts metadata features and actual email contents from raw emails and writes to a CSV file named features.csv. The jupyter notebook named model_creation.ipynb reads the features.csv and runs model. It also contains the analysis results which are graphs and training, validation, and testing accuracy reports of each model. 
