@@ -1,20 +1,11 @@
 import pandas as pd
-import numpy as np
 import email
 import re
 from email.utils import parseaddr
-import requests
 from datetime import datetime
 import dns.resolver
 from bs4 import BeautifulSoup
 import urllib.parse
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset, random_split
-from transformers import BertTokenizer, BertForSequenceClassification
-from sklearn.model_selection import train_test_split
-import torch.nn.functional as F
 import csv
 
 df = pd.read_csv("spam_assassin.csv")
@@ -22,10 +13,7 @@ df = pd.read_csv("spam_assassin.csv")
 def check_spf(domain):
     """
     Checks if the domain has a valid SPF (Sender Policy Framework) record.
-    Returns:
-        1 -> SPF record found
-        0 -> No SPF record
-        None -> Timeout or query issue
+    Returns: 1 if SPF record found, 0 if No SPF record, None if Timeout or query issue
     """
     try:
         answers = dns.resolver.resolve(domain, "TXT")
@@ -50,8 +38,7 @@ def check_spf(domain):
 def check_dkim(domain):
     """
     Tries multiple DKIM selectors to check if the domain has a DKIM record.
-    Args: domain (str): The domain to check.
-    Returns: tuple: (1, selector) if DKIM found, (0, None) if not found, (None, None) if timeout/error.
+    Returns: 1 if DKIM found, 0 if not found, None if timeout/error.
     """
     COMMON_DKIM_SELECTORS = [
         "default",
@@ -136,32 +123,42 @@ def feature_extraction(emails):
         "List-Unsubscribe:"
     ]
 
+    # Check if the email is in HTML format
     if re.search(r"<html|<body|<div|<span|<p>", emails, re.IGNORECASE):
         html_format = True
     else:
         html_format = False
 
+    # Split the email into based into different headers 
     for h in headers:
         if h in emails:
             emails = emails.replace(f" {h}", f"\n{h}")
     msg = email.message_from_string(emails)
 
+    # Extract the content and subject of the email
     content = msg.items()[-1][-1]
     subject = msg["Subject"]
+
+    # Initialize variable indicate if it has a image
     images = None
 
+    # extract the content type
     content_type = msg["Content-Type"].split(";")[0] if msg["Content-Type"] else None
     content_type_list1 = content_type if content_type else "None"
 
+    # extract the content disposition
     content_disp = msg["Content-Disposition"]
     content_disp_list1 = content_disp if content_disp else "None"
 
+    # check if the email has a list id
     has_list_id1 = 1 if msg["List-Id"] else 0
 
+    # if the email is in html format
     if html_format:
         soup = BeautifulSoup(content, "html.parser")
         text = soup.get_text(separator="\n", strip=True)
 
+        # get the actual processed content (subject + body)
         if subject:
             has_subject1 = 1
             process_content = subject + text
@@ -170,7 +167,10 @@ def feature_extraction(emails):
             process_content = text
         process_content_list1 = process_content
 
+        # get a list of images
         images = [img["src"] for img in soup.find_all("img") if "src" in img.attrs]
+
+        # get the number of html links
         links = [urllib.parse.unquote(a["href"]) for a in soup.find_all("a", href=True)]
         actual_links = [
             link
@@ -179,7 +179,9 @@ def feature_extraction(emails):
         ]
         num_html_list1 = len(actual_links)
 
+    # if the email is in text format
     else:
+        # get the actual processed content (subject + body)
         if subject:
             has_subject1 = 1
             process_content = subject + content
@@ -188,6 +190,7 @@ def feature_extraction(emails):
             process_content = content
         process_content_list1 = process_content
 
+        # get the number of html links
         url_pattern = r"(https?://[^\s]+|www\.[^\s]+|<a\s+href=['\"].*?['\"])"
         num_html = len(re.findall(url_pattern, content, re.IGNORECASE))
         if num_html > 0:
@@ -197,8 +200,10 @@ def feature_extraction(emails):
         else:
             num_html_list1 = 0
 
+    # get the number of exclamation marks
     num_exc_mark1 = process_content.count("!")
 
+    # check if the email has an attachment
     if images:
         has_attachement1 = 1
     elif content_type and content_type.startswith(
@@ -216,15 +221,18 @@ def feature_extraction(emails):
         has_attachement1 = 0
 
     if msg["Return-Path"]:
+        # get the domain of the return path
         name, return_path = parseaddr(msg["Return-Path"])
         addr_domain = return_path.split("@")[-1].lower()
 
+        # check if the domain has a valid SPF and DKIM record
         check_spf_list1 = check_spf(addr_domain)
         check_dkim_list1 = check_dkim(addr_domain)
 
         addr_domain_last = addr_domain.split(".")[-1]
         domain_list1 = addr_domain_last
 
+        # check if the from and return path are the same
         if msg["From"]:
             name, email_address = parseaddr(msg["From"])
             if email_address.lower() == return_path.lower():
@@ -240,14 +248,17 @@ def feature_extraction(emails):
         check_dkim_list1 = "None"
         from_returnpath_same1 = "None"
 
+    # get the number of received headers
     if msg["Received"]:
         received_headers = msg.get_all("Received", [])
         num_received_list1 = len(received_headers)
     else:
         num_received_list1 = "None"
 
+    # check if the email is a reply
     is_replied1 = 1 if msg["In-Reply-To"] or msg["References"] else 0
 
+    # extract date from the raw email
     def sending_time(data_match, format_list):
         date_new = data_match.group(1)
         for fmt2 in format_list:
@@ -282,10 +293,12 @@ def feature_extraction(emails):
         else:
             send_time = 'None'
 
+        # get the hour
         hour = send_time.hour
+        # check if it is a weekday
         weekday = send_time.weekday()
         is_weekday1 = 1 if weekday < 5 else 0
-
+        # check the time period based on hour
         if 0 <= hour <= 7:
             time_period1 = 1
         elif 8 <= hour <= 17:
@@ -315,6 +328,7 @@ def feature_extraction(emails):
         process_content_list1
     )
 
+# use parallel processing to extract features
 from concurrent.futures import ProcessPoolExecutor
 import os
 import multiprocessing
@@ -343,7 +357,8 @@ if __name__ == "__main__":
             process_content_list
         ) = zip(*results)
 
-    labels = df['target'].tolist()
+    # save it as csv
+    labels = df["target"].tolist()
     rows = zip(
         has_subject, content_type_list, content_disp_list,
         num_html_list, has_attachement, num_exc_mark, has_list_id, domain_list,
@@ -355,10 +370,10 @@ if __name__ == "__main__":
         "has_subject", "content_type", "content_disp", 
         "num_html", "has_attachement", "num_exc_mark", "has_list_id", "domain",
         "check_spf", "check_dkim", "from_returnpath_same", "num_received",
-        "is_replied", "time_period", "is_weekday", 'labels', "process_content"
+        "is_replied", "time_period", "is_weekday", "labels", "process_content"
     ]
 
-    with open('features.csv', 'w', newline = '') as f:
+    with open("features.csv", "w", newline = "") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(rows)
