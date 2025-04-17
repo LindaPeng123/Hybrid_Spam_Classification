@@ -1,0 +1,11 @@
+*
+
+!/hard_spam
+!/hard_spam/*
+!.gitignore
+!feature_extraction.py
+!feature_extraction_hard_spam.py
+!features.csv
+!features_hard_spam.csv
+!model_creation.ipynb
+!spam_assassin.csv
